@@ -44,6 +44,12 @@ export const USER_ERRORS = {
   sourceNotInstalled: ['refused', 'The {source} Source kind is not installed'],
   noLabels: ['refused', 'This Source has no names to refresh'],
   nothingToSync: ['refused', 'The {source} Source\'s part of the Policy has nothing to sync from, or the Source is off or waiting for setup'],
+  knowledgeSearchUnavailable: ['refused', 'The shared knowledge search service is not configured or reachable'],
+  knowledgeSearchFailed: ['refused', 'The shared knowledge search failed (HTTP {status})'],
+  webSearchDisabled: ['refused', 'External web search is disabled by Company Agent control settings'],
+  webSearchUnavailable: ['refused', 'The controlled web search gateway or DSH web provider is not configured or reachable'],
+  webSearchFailed: ['refused', 'The controlled web search failed ({status})'],
+  webFetchFailed: ['refused', 'The controlled web page fetch failed ({status})'],
 } as const satisfies Record<string, readonly ['missing' | 'refused', string]>
 export type UserErrorCode = keyof typeof USER_ERRORS
 

@@ -17,6 +17,35 @@ import type { Effects } from './effects.ts'
 
 /** Schema for a short lowercase kebab-case English ticket worktree name (1–4 words, at most 32 characters). */
 export const WorktreeNameSchema = z.string().max(32).regex(/^[a-z]+(?:-[a-z0-9]+){0,3}$/, 'Use 1–4 short English words in lowercase kebab-case, at most 32 characters').describe('Meaningful short English ticket name, e.g. fix-plan-color. Translate Chinese titles into English; no Chinese, pinyin or generic ticket names. 1–4 lowercase words in kebab-case, at most 32 characters.')
+export const AssistantIntentSchema = z.object({
+  action: z.enum(['observe', 'propose_work']),
+  rationale: z.string().trim().min(1).max(1000),
+  title: z.string().trim().min(1).max(160).optional(),
+  objective: z.string().trim().min(1).max(4000).optional(),
+  completion_conditions: z.array(z.string().trim().min(1).max(500)).max(20),
+  plan_steps: z.array(z.object({
+    title: z.string().trim().min(1).max(160),
+    objective: z.string().trim().min(1).max(4000),
+    capability: z.string().trim().min(1).max(100),
+    completion_conditions: z.array(z.string().trim().min(1).max(500)).max(20),
+    knowledge_document_ids: z.array(z.string().trim().min(1).max(200)).max(20).optional(),
+    attachment_ids: z.array(z.string().trim().min(1).max(200)).max(20).optional(),
+  }).strict()).max(20),
+  publication: z.object({
+    recommendation: z.enum(['suppress', 'private_nudge', 'group_update', 'urgent_escalation']),
+    reason: z.string().trim().min(1).max(1000),
+    body: z.string().trim().max(4000).optional(),
+  }).strict(),
+}).strict().superRefine((intent, ctx) => {
+  if (intent.action === 'propose_work') {
+    for (const field of ['title', 'objective'] as const) {
+      if (!intent[field]) ctx.addIssue({ code: 'custom', path: [field], message: `${field} is required for proposed work` })
+    }
+    if (!intent.completion_conditions.length) ctx.addIssue({ code: 'custom', path: ['completion_conditions'], message: 'Proposed work requires completion conditions' })
+    if (!intent.plan_steps.length) ctx.addIssue({ code: 'custom', path: ['plan_steps'], message: 'Proposed work requires a plan' })
+  }
+})
+
 /** Schema for the main Session's proactive candidate assessment decision (`orchestrator_eval_decide`). */
 export const AssessmentSchema = z.object({
   decision: z.enum(['accept', 'ignore', 'unavailable']),
@@ -30,6 +59,7 @@ export const AssessmentSchema = z.object({
   intent_evidence: z.string().trim().min(1).max(700).nullish().describe('For acceptance: the quotes that establish the three facts.'),
   acknowledgement: AcknowledgementSchema.nullish().describe('For acceptance: one sentence in the source language, posted as a reply to the trigger; omit only when a matched rule asks for silence.'),
   reason: z.string().min(1).max(500),
+  assistant_intent: AssistantIntentSchema.optional().describe('Required for Company Agent events; structured observation or proposed work and publication recommendation.'),
 }).strict().refine(value => value.decision !== 'accept' || !directionAllowed(value.direction) || !value.rule_assessments.some(rule => rule.matched)
   || !!value.worktree_name, { message: 'Accepted work requires a short English worktree_name', path: ['worktree_name'] })
 
@@ -270,9 +300,15 @@ export class MasterAssessor implements Assessor {
   }
   /** Converts the assessment into an outcome under current settings and passes it to `Engine.decide` for policy verification. */
   async decide(triggerId: string, result: z.infer<typeof AssessmentSchema>, signal?: AbortSignal): Promise<{ state: string; ticket_id?: string; reason: string }> {
-    const { candidate } = this.evalFor(triggerId)
+    const { candidate, trigger } = this.evalFor(triggerId)
     signal?.throwIfAborted()
-    let outcome: AssessmentOutcome = assessmentOutcome(result, this.host.settings(), candidate.strength)
+    if (trigger.source === 'company-agent' && !result.assistant_intent) {
+      throw new Error('Company Agent assessments require assistant_intent')
+    }
+    const normalized = trigger.source === 'company-agent' && result.decision !== 'unavailable'
+      ? { ...result, decision: 'ignore' as const, reason: 'Company Agent retains authorization, execution and publication control' }
+      : result
+    let outcome: AssessmentOutcome = assessmentOutcome(normalized, this.host.settings(), candidate.strength)
     if (outcome.kind === 'accept' && outcome.acknowledgement) outcome = { ...outcome, acknowledgement: checkedImText(outcome.acknowledgement) }
     const decision = this.host.engine.decide(triggerId, { ...outcome, evalId: candidate.evalId })
     return { state: decision.kind, ...(decision.ticketId ? { ticket_id: decision.ticketId } : {}), reason: reasonText(decision.reason) }

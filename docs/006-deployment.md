@@ -10,6 +10,19 @@ Use this guide to install, configure and operate dsh-superagent. It covers accou
 
 Plugin configuration holds the state directory and machine limits. Use the panel for everything else: Sources for the repository and accounts, Policy for allowed lists, and Execution for worker directories and commands.
 
+### Company Agent controlled web search
+
+When DSSuperAgent is used behind Company Agent, copy `.env.example` to `.env` (or export the same variables in the service environment):
+
+```text
+COMPANY_AGENT_WEB_GATE_URL=http://127.0.0.1:8767/internal/web/authorize
+COMPANY_AGENT_WEB_GATE_API_KEY=
+```
+
+The Company Agent Web Gate must be running on the configured address. The main Session and Executor Session call the local `orchestrator_web_search` and `orchestrator_web_fetch` tools; each call asks the gate for permission before using DSH's official `ctx.web` provider. Direct DSH `tool-web` search/fetch is disabled in this bundle so the sessions cannot bypass the gate.
+
+The control console's **DSSuperAgent 联网检索** switch is checked for every call. Turning it off returns a denial immediately; turning it on allows the next call without restarting DSSuperAgent. **DSH 任务联网** is a separate switch for newly created Company Agent DSH executions and does not change the DSSuperAgent gate.
+
 ### Permissions and isolation
 
 The bundle defines `dsh-superagent-worker` for Executors and `dsh-superagent-router` for the main Session. They appear in the DeepSeek Harness preset list but are intended only for dsh-superagent. Do not select them for personal Sessions or disable their configuration rows. The application needs them to create and resume its Sessions.
