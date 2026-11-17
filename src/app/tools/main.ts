@@ -33,6 +33,18 @@ export interface MainToolsHost {
   /** Runs an Engine command initiated by the main Session without emitting self-notifications. */
   quietly<T>(run: () => T): T
 }
+
+/** Resolve the short-lived Company Agent grant from internal trigger metadata.
+ * The grant is persisted for restart recovery but is never included in model-visible text or tool arguments.
+ */
+function knowledgeGrant(host: MainToolsHost, triggerId: string): string {
+  const trigger = host.store.triggers.get(triggerId)
+  const grant = trigger?.meta.knowledgeGrant
+  if (trigger?.source !== 'company-agent' || typeof grant !== 'string' || grant.length < 32) {
+    throw new UserError('knowledgeSearchUnavailable')
+  }
+  return grant
+}
 /** Schedules an Engine pass to execute the recorded routing decision and formats the tool response. */
 function routed(host: MainToolsHost, result: { decision?: DecisionKind; reason: string; ticketId?: string | undefined }) {
   host.requestPass()
@@ -162,12 +174,13 @@ export function mainTools(host: MainToolsHost, agent: Agent): Tool[] {
     ...webTools(host.context),
     tool({
       name: 'orchestrator_knowledge_search',
-      description: "Search scoped knowledge with a grant.",
+      description: "Search scoped Company Agent knowledge for the candidate trigger. The grant is resolved internally; never provide a grant value.",
       schema: z.object({
-        grant: z.string(),
+        trigger_id: z.string().trim().min(1).describe('The candidate card trigger_id whose Company Agent knowledge scope should be used.'),
         query: z.string().trim().min(1).max(2000),
       }).strict(),
       execute: async (args, signal) => {
+        const grant = knowledgeGrant(host, args.trigger_id)
         const endpoint = new URL(process.env.COMPANY_AGENT_KNOWLEDGE_API_URL ?? 'http://127.0.0.1:8766/internal/knowledge/search')
         if (!['http:', 'https:'].includes(endpoint.protocol) || endpoint.username || endpoint.password || endpoint.search || endpoint.hash) {
           throw new UserError('knowledgeSearchUnavailable')
@@ -177,20 +190,21 @@ export function mainTools(host: MainToolsHost, agent: Agent): Tool[] {
         if (!loopback && bridgeKey.length < 32) throw new UserError('knowledgeSearchUnavailable')
         const response = await fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/json',
           ...(bridgeKey ? { 'X-Company-Agent-Bridge-Key': bridgeKey } : {}) },
-          body: JSON.stringify({ ...args, limit: 8 }), signal })
+          body: JSON.stringify({ grant, query: args.query, limit: 8 }), signal })
         if (!response.ok) throw new UserError('knowledgeSearchFailed', { status: String(response.status) })
         return response.json()
       },
     }),
     tool({
       name: 'orchestrator_knowledge_context',
-      description: "Read scoped files or history with a grant.",
+      description: "Read scoped Company Agent files or history for the candidate trigger. The grant is resolved internally; never provide a grant value.",
       schema: z.object({
-        grant: z.string(),
+        trigger_id: z.string().trim().min(1).describe('The candidate card trigger_id whose Company Agent knowledge scope should be used.'),
         action: z.enum(['list_attachments', 'read_attachment', 'read_document', 'history']),
         value: z.string().optional(),
       }).strict(),
       execute: async (args, signal) => {
+        const grant = knowledgeGrant(host, args.trigger_id)
         const endpoint = new URL(process.env.COMPANY_AGENT_KNOWLEDGE_API_URL ?? 'http://127.0.0.1:8766/internal/knowledge/search')
         const routes = { list_attachments: '/internal/attachments/list', read_attachment: '/internal/attachments/read',
           read_document: '/internal/knowledge/read', history: '/internal/conversation/history' } as const
@@ -201,7 +215,7 @@ export function mainTools(host: MainToolsHost, agent: Agent): Tool[] {
         const bridgeKey = process.env.COMPANY_AGENT_KNOWLEDGE_API_KEY ?? ''
         const loopback = endpoint.hostname === 'localhost' || endpoint.hostname === '127.0.0.1' || endpoint.hostname === '[::1]'
         if (!loopback && bridgeKey.length < 32) throw new UserError('knowledgeSearchUnavailable')
-        const body: Record<string, unknown> = { grant: args.grant }
+        const body: Record<string, unknown> = { grant }
         if (args.action === 'list_attachments') { body.query = args.value ?? ''; body.limit = 30 }
         if (args.action === 'read_attachment') body.attachment_id = args.value
         if (args.action === 'read_document') body.document_id = args.value

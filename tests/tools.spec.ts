@@ -8,6 +8,7 @@ import { RESOURCES } from '../src/app/resources.ts'
 import { CliError, Commands } from '../src/infra/commands.ts'
 import { IM_WORDS, NOTE_WORDS } from '../src/infra/text.ts'
 import { CHAT, feishu, startRuntime, type Host } from './fixtures/host.ts'
+import { companyAgentTrigger } from '../src/sources/company-agent.ts'
 
 let h: Host
 beforeEach(async () => { h = await startRuntime() })
@@ -54,6 +55,25 @@ it('reads the lists, a ticket, a decision, the settings, the prompts and the mod
   const config = h.runtime.prompts.current().config
   for (let revision = 0; revision < 51; revision++) h.runtime.prompts.save({ ...config, scope: `Scope ${revision}.` }, revision, 'panel')
   expect(await read('prompts', { limit: 8000 })).toMatchObject({ items: expect.objectContaining({ length: 50 }), next_offset: 50 })
+})
+
+it('resolves the Company Agent knowledge grant internally and keeps it out of tool arguments', async () => {
+  const grant = 'g'.repeat(43)
+  const trigger = companyAgentTrigger({
+    event_id: 'knowledge-event', source_type: 'qq.group', source_id: 'group-1', conversation_id: 'group-1',
+    actor_id: 'member-1', occurred_at: '2026-11-18T00:00:00.000Z', content: '查资料', knowledge_grant: grant,
+    attachments: [], capabilities: [], context: [],
+  })
+  h.runtime.receive(trigger)
+  expect(h.runtime.store.triggers.get(trigger.id)?.text).not.toContain(grant)
+  vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    expect(JSON.parse(String(init?.body))).toEqual({ grant, query: 'maintenance', limit: 8 })
+    return Response.json({ results: [] })
+  }))
+
+  await expect(h.runTool(h.runtime.masterId, 'orchestrator_knowledge_search', {
+    trigger_id: trigger.id, query: 'maintenance',
+  })).resolves.toEqual({ results: [] })
 })
 
 it('lists in prompts the built-in parts whose text changed since the team overrode them, and the built-in parts in prompts/defaults', async () => {

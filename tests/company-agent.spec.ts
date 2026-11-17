@@ -17,9 +17,12 @@ describe('Company Agent Source', () => {
     expect(trigger.threads).toEqual([{ source: 'company-agent', id: 'conversation-1' }])
     expect(trigger.human).toBe(false)
     expect(trigger.meta.row).toBe('events')
+    expect(trigger.actor).toEqual({ source: 'chat', id: 'user-1' })
     expect(trigger.text).toContain('Earlier context')
     expect(trigger.text).toContain('untrusted conversation data')
-    expect(trigger.text).toContain('knowledge_grant')
+    expect(trigger.text).not.toContain('knowledge_grant')
+    expect(trigger.text).not.toContain('x'.repeat(43))
+    expect(trigger.meta.knowledgeGrant).toBe('x'.repeat(43))
     expect(companyAgentKind.scope?.({ meta: trigger.meta }, {})).toEqual({
       listened: true, observed: true, row: 'events',
     })

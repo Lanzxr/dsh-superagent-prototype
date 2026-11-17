@@ -48,7 +48,6 @@ export function companyAgentTrigger(input: CompanyAgentEvent): Trigger {
     actor_id: event.actor_id,
     occurred_at: event.occurred_at,
     capabilities: event.capabilities,
-    ...(event.knowledge_grant ? { knowledge_grant: event.knowledge_grant } : {}),
     attachments: event.attachments,
     context: event.context,
     current_event: { event_id: event.event_id, content: event.content },
@@ -57,12 +56,13 @@ export function companyAgentTrigger(input: CompanyAgentEvent): Trigger {
     id: `${COMPANY_AGENT_SOURCE}:${event.event_id}`,
     source: COMPANY_AGENT_SOURCE,
     threads: [{ source: COMPANY_AGENT_SOURCE, id: event.conversation_id }],
-    actor: { source: event.source_type, id: '' },
+    actor: { source: event.source_type, id: event.actor_id },
     human: false,
     at: event.occurred_at,
     text: JSON.stringify(envelope, null, 2),
     meta: { bridge: COMPANY_AGENT_SOURCE, row: 'events', eventId: event.event_id,
       sourceType: event.source_type, sourceId: event.source_id, conversationId: event.conversation_id,
-      actorId: event.actor_id, capabilities: event.capabilities },
+      actorId: event.actor_id, capabilities: event.capabilities,
+      ...(event.knowledge_grant ? { knowledgeGrant: event.knowledge_grant } : {}) },
   }
 }
