@@ -181,3 +181,35 @@ it('lets the main Session read on from the cursor its loaded window ends with, a
   const other = await s2.assessor.context('issue-3', signal) as { batch: Record<string, unknown>[] }
   expect(other.batch).toEqual([expect.objectContaining({ trigger_id: 'long', chars: long.text.length, read: 'trigger/long' })])
 })
+it('requires and persists structured intent for Company Agent assessments', async () => {
+  const s = setup()
+  const trigger: Trigger = { ...issue(1), id: 'company-agent:event-1', source: 'company-agent',
+    threads: [{ source: 'company-agent', id: 'conversation-1' }], actor: { source: 'company-agent', id: '' },
+    human: false, meta: { bridge: 'company-agent', row: 'events' } }
+  s.engine.receive(trigger)
+  s.engine.evaluateDue()
+  const settings = SettingsSchema.parse({})
+  const result = {
+    decision: 'ignore' as const,
+    rule_assessments: settings.policy.rules.filter(rule => rule.enabled)
+      .map(rule => ({ rule_id: rule.id, matched: false, reason: 'Company Agent retains authorization' })),
+    direction: { implementation_requested: false, target_basis: 'undetermined', requires_design_decision: false,
+      evidence: 'The discussion implies useful analysis' },
+    title: 'Analyze the discussion', scope: 'Prepare an evidence-based analysis', reason: 'A concrete review is useful',
+  }
+  await expect(s.assessor.decide(trigger.id, AssessmentSchema.parse(result), signal))
+    .rejects.toThrow('Company Agent assessments require assistant_intent')
+
+  const assistant_intent = {
+    action: 'propose_work', rationale: 'The discussion needs evidence', title: 'Analyze the discussion',
+    objective: 'Produce an evidence-based analysis', completion_conditions: ['Save a report'],
+    plan_steps: [{ title: 'Prepare analysis', objective: 'Summarize the evidence', capability: 'dsh.task',
+      completion_conditions: ['The report states evidence and uncertainty'] }],
+    publication: { recommendation: 'group_update', reason: 'A concise conclusion would help the group' },
+  }
+  const decision = await s.assessor.decide(trigger.id, AssessmentSchema.parse({ ...result, assistant_intent }), signal)
+
+  expect(decision.state).toBe('ignore')
+  expect(s.repo.decisions.byThread('company-agent:conversation-1')[0]?.audit)
+    .toMatchObject({ assistant_intent })
+})

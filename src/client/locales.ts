@@ -724,6 +724,12 @@ const TEXT = {
   'userError.sourceNotInstalled': ['{source} 来源的插件没有安装。', USER_ERRORS.sourceNotInstalled[1]],
   'userError.noLabels': ['这个来源没有可以刷新的名称。', USER_ERRORS.noLabels[1]],
   'userError.nothingToSync': ['{source} 来源上的策略没有指定从哪里同步，或者这个来源已关闭或在等待部署检查。', USER_ERRORS.nothingToSync[1]],
+  'userError.knowledgeSearchUnavailable': ['共享资料库检索服务未配置或无法连接。', USER_ERRORS.knowledgeSearchUnavailable[1]],
+  'userError.knowledgeSearchFailed': ['共享资料库检索失败（HTTP {status}）。', USER_ERRORS.knowledgeSearchFailed[1]],
+  'userError.webSearchDisabled': ['外部联网检索已被 Company Agent 控制台关闭。', USER_ERRORS.webSearchDisabled[1]],
+  'userError.webSearchUnavailable': ['受控联网检索网关或 DSH 联网提供方未配置或无法连接。', USER_ERRORS.webSearchUnavailable[1]],
+  'userError.webSearchFailed': ['受控联网检索失败（{status}）。', USER_ERRORS.webSearchFailed[1]],
+  'userError.webFetchFailed': ['受控网页读取失败（{status}）。', USER_ERRORS.webFetchFailed[1]],
   // Setup problems and health codes; English reuses the host's own text read by the log and main Session
   'setup.repositoryUnset': ['GitHub 来源没有设置监听的仓库。', SETUP_PROBLEMS.repositoryUnset[1]],
   'setup.foreignFile': ['{file} 不是 dsh-superagent 写入的文件；移走它，或换一个状态目录。', SETUP_PROBLEMS.foreignFile[1]],

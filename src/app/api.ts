@@ -8,6 +8,7 @@ import type { SettingsView } from './views/settings.ts'
 import type { SourceStatusView } from './views/sources.ts'
 import type { DecisionListView, SearchView, ThreadDetailView, ThreadListView } from './views/threads.ts'
 import type { TicketListView } from './views/tickets.ts'
+import type { CompanyAgentEvent } from '../sources/company-agent.ts'
 
 export const TICKET_FILTERS = ['open', 'person', 'working', 'idle', 'ended'] as const
 export const THREAD_FILTERS = ['subscribed', 'evaluating', 'recent', 'all'] as const
@@ -22,6 +23,7 @@ export interface Api {
   'GET overview': { response: OverviewView }
   'GET search': { query: { q: string }; response: SearchView }
   'GET sources': { response: SourceStatusView[] }
+  'POST company-agent/events': { body: CompanyAgentEvent; response: { status: 'stored' | 'duplicate' | 'filtered'; trigger_id: string; thread: string } }
   'GET settings': { response: SettingsView }
   'POST sources/:id/labels': { response: { added: string[] } }
   'GET threads': { query?: Paged & { filter?: ThreadFilter }; response: ThreadListView }

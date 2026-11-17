@@ -299,6 +299,8 @@ const ROUTES: { [K in keyof Api]: Route<K> } = {
     return { tickets: [], threads: server.search.threads, items: server.search.items.filter(item => item.preview.includes(q)) }
   } },
   'GET sources': { answer: sourceStatuses },
+  'POST company-agent/events': { body: true, answer: ({ body }) => ({ status: 'stored', trigger_id: `company-agent:${body.event_id}`,
+    thread: `company-agent:${body.conversation_id}` }) },
   'GET settings': { answer: settingsView },
   'POST sources/:id/labels': { answer: () => {
     // Label refresh failures come from the bot CLI and are returned verbatim.

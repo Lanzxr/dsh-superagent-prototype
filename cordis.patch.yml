@@ -116,10 +116,13 @@
           - id: tool-web
             name: '@deepseek-ai/dsh-tool-web'
             config:
+              # Direct web_search/web_fetch are disabled here. Sessions use the
+              # Company Agent controlled wrappers, which re-check the switch per call.
+              search: false
               fetch: false
               searchTimeoutMs: 60000
     # The agent preset of the main Session (ROUTER_PRESET in src/app/sessions.ts). The worker's 5-second shell and job waits, so a command or a wait does not hold back the next candidates, and
-    # only what the main Session uses: no subagents, web, file search or writes, todo list, questions to a person, presenting,
+    # only what the main Session uses: no subagents, direct web tools, file search or writes, todo list, questions to a person, presenting,
     # plan mode, plugin manager, scheduling, goals or workflows. No persona: the main Session's prompt is complete, so it has
     # no other section.
     - id: dsh-superagent-router-preset

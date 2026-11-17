@@ -9,8 +9,10 @@ import type { Store } from '../store.ts'
 import { reportRelay, threadFollowedNotice } from '../notices.ts'
 import type { Sessions } from '../sessions.ts'
 import { AcknowledgementSchema, readTool, tool, type Tool } from './tool.ts'
+import { webTools } from './web.ts'
 
 export interface ExecutorToolsHost {
+  readonly context: import('@deepseek-ai/cordis').Context
   readonly engine: Pick<EngineForExecutor, 'report' | 'reply' | 'markUnrelated' | 'handback' | 'followForContext'>
   readonly store: Pick<Store, 'tickets' | 'replyStatus' | 'atomic'>
   readonly sessions: Pick<Sessions, 'relay' | 'notify'>
@@ -25,6 +27,7 @@ export function executorTools(host: ExecutorToolsHost, ticket: Ticket): Tool[] {
   return [
     readTool('Read one page of a resource of this ticket that the resource parameter lists. Follow next_offset, and next_resource where a page names one.',
       true, (resource, offset, limit, signal) => readResource(host.resources, resource, offset, limit, ticketId, signal)),
+    ...webTools(host.context),
     tool({
       name: 'orchestrator_ack',
       description: 'Acknowledge one original human request before substantial work, as the replies section says; it posts as a reply to that message.',

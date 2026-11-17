@@ -30,6 +30,7 @@ export function directionAllowed(value: unknown): value is AdmissionDirection {
 export interface Assessment {
   decision: 'accept' | 'ignore' | 'unavailable'; rule_assessments: RuleAssessment[]; direction: unknown
   title: string; scope: string; reason: string; intent_evidence?: string | null; acknowledgement?: string | null; worktree_name?: string
+  assistant_intent?: unknown
 }
 /**
  * Validate an assessment against enabled rules and convert it into an engine `AssessmentOutcome`.
@@ -46,7 +47,8 @@ export function assessmentOutcome(assessment: Assessment, settings: Pick<Setting
   }
   const matches = judged.filter(item => item.matched).map(({ rule_id, reason }) => ({ rule_id, reason }))
   const evidence = assessment.intent_evidence ? { intent_evidence: assessment.intent_evidence } : {}
-  const audit = { matches, rule_assessments: judged, direction: assessment.direction, ...evidence }
+  const audit = { matches, rule_assessments: judged, direction: assessment.direction, ...evidence,
+    ...assessment.assistant_intent ? { assistant_intent: assessment.assistant_intent } : {} }
   if (assessment.decision !== 'accept') return { kind: assessment.decision, reason: assessment.reason, audit }
   if (!directionAllowed(assessment.direction)) return { kind: 'ignore', audit, reason: { code: 'directionUnsettled' } }
   if (!matches.length) return { kind: 'ignore', audit, reason: { code: 'noRuleMatched' } }
@@ -136,7 +138,10 @@ function admissionCell(allowed: boolean, addressed: boolean): AdmissionCell | un
   return allowed ? addressed ? undefined : 'listedUnaddressed' : addressed ? 'unlistedAddressed' : 'unlistedUnaddressed'
 }
 function admissionOf(settings: Settings, source: string, row: string | undefined, cell: AdmissionCell): Admission {
-  return (row === undefined ? undefined : settings.policy.sources[source]?.admission[row]?.[cell]) ?? ADMISSION_DEFAULTS[cell]
+  const configured = row === undefined ? undefined : settings.policy.sources[source]?.admission[row]?.[cell]
+  if (configured !== undefined) return configured
+  if (source === 'company-agent' && row === 'events' && cell === 'unlistedUnaddressed') return 'inferred'
+  return ADMISSION_DEFAULTS[cell]
 }
 const STRENGTH: Readonly<Record<Admission, number>> = { ignore: 0, inferred: 1, explicit: 2 }
 

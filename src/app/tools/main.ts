@@ -13,6 +13,7 @@ import type { Sessions } from '../sessions.ts'
 import type { Settings } from '../settings.ts'
 import type { Store } from '../store.ts'
 import { AcknowledgementSchema, readTool, tool, type Tool } from './tool.ts'
+import { webTools } from './web.ts'
 
 const RoutingNoteSchema = z.string().trim()
   .refine(text => wordCount(text) <= NOTE_WORDS, `Routing note must not exceed ${NOTE_WORDS} words (Chinese uses word segmentation). Shorten it; do not split it across deliveries.`)
@@ -158,6 +159,59 @@ export function mainTools(host: MainToolsHost, agent: Agent): Tool[] {
     readTool('Read one page of a resource the resource parameter lists, such as the ticket list or a ticket. Follow next_offset, and next_resource where a page names one.',
       false, (resource, offset, limit, signal) => readResource(resources, resource, offset, limit, undefined, signal)),
     routeTool(host),
+    ...webTools(host.context),
+    tool({
+      name: 'orchestrator_knowledge_search',
+      description: "Search scoped knowledge with a grant.",
+      schema: z.object({
+        grant: z.string(),
+        query: z.string().trim().min(1).max(2000),
+      }).strict(),
+      execute: async (args, signal) => {
+        const endpoint = new URL(process.env.COMPANY_AGENT_KNOWLEDGE_API_URL ?? 'http://127.0.0.1:8766/internal/knowledge/search')
+        if (!['http:', 'https:'].includes(endpoint.protocol) || endpoint.username || endpoint.password || endpoint.search || endpoint.hash) {
+          throw new UserError('knowledgeSearchUnavailable')
+        }
+        const bridgeKey = process.env.COMPANY_AGENT_KNOWLEDGE_API_KEY ?? ''
+        const loopback = endpoint.hostname === 'localhost' || endpoint.hostname === '127.0.0.1' || endpoint.hostname === '[::1]'
+        if (!loopback && bridgeKey.length < 32) throw new UserError('knowledgeSearchUnavailable')
+        const response = await fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/json',
+          ...(bridgeKey ? { 'X-Company-Agent-Bridge-Key': bridgeKey } : {}) },
+          body: JSON.stringify({ ...args, limit: 8 }), signal })
+        if (!response.ok) throw new UserError('knowledgeSearchFailed', { status: String(response.status) })
+        return response.json()
+      },
+    }),
+    tool({
+      name: 'orchestrator_knowledge_context',
+      description: "Read scoped files or history with a grant.",
+      schema: z.object({
+        grant: z.string(),
+        action: z.enum(['list_attachments', 'read_attachment', 'read_document', 'history']),
+        value: z.string().optional(),
+      }).strict(),
+      execute: async (args, signal) => {
+        const endpoint = new URL(process.env.COMPANY_AGENT_KNOWLEDGE_API_URL ?? 'http://127.0.0.1:8766/internal/knowledge/search')
+        const routes = { list_attachments: '/internal/attachments/list', read_attachment: '/internal/attachments/read',
+          read_document: '/internal/knowledge/read', history: '/internal/conversation/history' } as const
+        endpoint.pathname = routes[args.action]
+        if (!['http:', 'https:'].includes(endpoint.protocol) || endpoint.username || endpoint.password || endpoint.search || endpoint.hash) {
+          throw new UserError('knowledgeSearchUnavailable')
+        }
+        const bridgeKey = process.env.COMPANY_AGENT_KNOWLEDGE_API_KEY ?? ''
+        const loopback = endpoint.hostname === 'localhost' || endpoint.hostname === '127.0.0.1' || endpoint.hostname === '[::1]'
+        if (!loopback && bridgeKey.length < 32) throw new UserError('knowledgeSearchUnavailable')
+        const body: Record<string, unknown> = { grant: args.grant }
+        if (args.action === 'list_attachments') { body.query = args.value ?? ''; body.limit = 30 }
+        if (args.action === 'read_attachment') body.attachment_id = args.value
+        if (args.action === 'read_document') body.document_id = args.value
+        if (args.action === 'history') { body.before_event_id = args.value; body.limit = 30 }
+        const response = await fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/json',
+          ...(bridgeKey ? { 'X-Company-Agent-Bridge-Key': bridgeKey } : {}) }, body: JSON.stringify(body), signal })
+        if (!response.ok) throw new UserError('knowledgeSearchFailed', { status: String(response.status) })
+        return response.json()
+      },
+    }),
     tool({
       name: 'orchestrator_ticket_retry',
       description: 'Start a new assignment on an explicit human request to retry a ticket whose worker reported failed or blocked, or whose input was not delivered; the stalled one ends.',
