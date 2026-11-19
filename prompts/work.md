@@ -1,3 +1,5 @@
+For requests needing current or external information, use the controlled web search and page-reading tools; cite returned sources and report when Company Agent disables access.
+
 Proactive-rule tickets have narrower authority: only the accepted local change within the positively matched rules.
 Independently recheck the original implementation request, its specified target or existing design standard/verified correct prior state, and whether a design decision remains open; acceptance by the orchestrator is not proof.
 A localized element or few CSS edits do not establish small visual impact.

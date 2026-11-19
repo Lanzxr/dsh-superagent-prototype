@@ -729,6 +729,7 @@ const TEXT = {
   'userError.webSearchDisabled': ['外部联网检索已被 Company Agent 控制台关闭。', USER_ERRORS.webSearchDisabled[1]],
   'userError.webSearchUnavailable': ['受控联网检索网关或 DSH 联网提供方未配置或无法连接。', USER_ERRORS.webSearchUnavailable[1]],
   'userError.webSearchFailed': ['受控联网检索失败（{status}）。', USER_ERRORS.webSearchFailed[1]],
+  'userError.webSearchCredentialMissing': ['当前联网检索后端缺少其所需凭据，请检查实际搜索后端配置。', USER_ERRORS.webSearchCredentialMissing[1]],
   'userError.webFetchFailed': ['受控网页读取失败（{status}）。', USER_ERRORS.webFetchFailed[1]],
   // Setup problems and health codes; English reuses the host's own text read by the log and main Session
   'setup.repositoryUnset': ['GitHub 来源没有设置监听的仓库。', SETUP_PROBLEMS.repositoryUnset[1]],

@@ -57,6 +57,15 @@ it('assembles every role from fixed sections around the team sections, whatever 
   expect(composePrompt(config, 'worker')).not.toContain(mainAdmissionPolicy)
 })
 
+it('requires current web requests from Company Agent to be handed to a web-enabled worker', () => {
+  expect(mainAdmissionPolicy).toContain('current_event')
+  expect(mainAdmissionPolicy).toContain('require `propose_work`')
+  expect(mainAdmissionPolicy).toContain('orchestrator_web_search')
+  expect(mainAdmissionPolicy).toContain('QQ replies use `group_update`')
+  expect(guides.dispatch).toContain('Company Agent current/web requests')
+  expect(guides.dispatch).toContain('a `dsh.task` step')
+})
+
 it('reads a prompt file whatever its line ends and blank lines, and names a missing or empty one', () => {
   const dir = mkdtempSync(join(tmpdir(), 'prompt-file-'))
   // promptFile resolves paths relative to prompts/; use a relative path to reach the temp dir.

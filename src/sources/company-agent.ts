@@ -5,6 +5,8 @@ import type { SourceKind } from './kind.ts'
 
 export const COMPANY_AGENT_SOURCE = 'company-agent'
 
+const HUMAN_QQ_SOURCE_TYPES = new Set(['qq.group', 'qq.guild', 'qq.direct', 'qq.private', 'qq.c2c'])
+
 const ContextEventSchema = z.object({
   event_id: z.string().trim().min(1).max(200).optional(),
   actor_id: z.string().trim().max(200),
@@ -57,7 +59,9 @@ export function companyAgentTrigger(input: CompanyAgentEvent): Trigger {
     source: COMPANY_AGENT_SOURCE,
     threads: [{ source: COMPANY_AGENT_SOURCE, id: event.conversation_id }],
     actor: { source: event.source_type, id: event.actor_id },
-    human: false,
+    // QQ events forwarded by Company Agent originate from a user.
+    // Keep system and execution-result events out of the user assessment path.
+    human: HUMAN_QQ_SOURCE_TYPES.has(event.source_type),
     at: event.occurred_at,
     text: JSON.stringify(envelope, null, 2),
     meta: { bridge: COMPANY_AGENT_SOURCE, row: 'events', eventId: event.event_id,

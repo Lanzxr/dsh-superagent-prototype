@@ -1,23 +1,23 @@
 # 受控联网检索
 
-DSSuperAgent 不直接开放 DSH 原生 `web_search` / `web_fetch` 工具。主 Session 和 Executor Session 使用两个 Company Agent 工具：
+DSSuperAgent 主会话不注册联网工具；需要实时或外部信息时，应创建/续接 worker 任务，由 worker 使用 `orchestrator_web_search` 和 `orchestrator_web_fetch`。Company Agent 每次搜索或读取网页前检查控制台开关；搜索请求由自托管 SearXNG 执行，网页读取由 DSH fetch 执行。结果包含来源网址、标题、摘要和检索时间，worker 应引用来源。API-ZENO 继续负责模型，不提供或替代搜索后端。
 
-- `orchestrator_web_search`：搜索当前网页信息，返回来源 URL、标题、摘要、发布时间和检索时间。
-- `orchestrator_web_fetch`：读取单个 HTTP(S) 页面，优先使用搜索结果中的 URL。
+Company Agent 事件以当前消息判断联网需求；历史上下文中的“不能联网”不能覆盖新的实时请求。需要联网时必须形成 `propose_work` 并交给带 `dsh.task` 的 worker，QQ 回复使用 `group_update`。
 
-每次工具调用先向 `COMPANY_AGENT_WEB_GATE_URL` 发送授权请求。Company Agent 从控制库读取 `dssuperagent_web_search_enabled`；关闭时返回 403，Agent 不会访问外网；打开时才调用 DSH 官方 `ctx.web` seam。这样不需要重启 DSSuperAgent，下一次调用即可看到开关变化。
+网页读取使用 `orchestrator_web_fetch`：先通过 Company Agent `/internal/web/authorize`，再调用 DSH 的 HTTP fetch 能力。DSH 原生 `tool-web` 搜索和读取关闭，确保 Agent 无法绕过 Company Agent 的权限检查。DSH 本体没有修改。
 
-DSH 本体没有被修改。DSH 官方 Web seam 和提供方仍由 DSH 自己加载；本项目只增加 Company Agent 授权边界和 DSSuperAgent 的薄工具适配器。DSSuperAgent 的运行环境需要配置：
+DSSuperAgent 进程需要设置：
 
 ```text
 COMPANY_AGENT_WEB_GATE_URL=http://127.0.0.1:8767/internal/web/authorize
-COMPANY_AGENT_WEB_GATE_API_KEY=<与 Company Agent 相同的 32+ 字符密钥；loopback 可留空>
+COMPANY_AGENT_WEB_GATE_API_KEY=<与 Company Agent 相同的桥接密钥；双方均使用 loopback 时可以留空>
 ```
 
-Worker profile 中的原生 `tool-web` 已关闭，避免绕过 Company Agent；Company Agent 启动的 DSH 执行仍由 `AGENT_WEB_SEARCH_ENABLED` 单独控制。资料库检索和外部联网检索是两套权限，关闭外网不会影响 AnythingLLM 查询。
+搜索失败含义：
 
-## 失败含义
+- `webSearchDisabled`：控制台关闭了 DSSuperAgent worker 联网权限。主会话没有联网工具，无法自行绕过此开关。
+- `webSearchUnavailable`：Company Agent 网关不可达。
+- `webSearchFailed`：SearXNG 不可达或返回了无效响应。
+- `webFetchFailed`：网页读取服务失败。
 
-- `webSearchDisabled`：控制台关闭了 DSSuperAgent 联网权限。
-- `webSearchUnavailable`：网关不可达，或 DSH 没有可用的 Web provider。
-- `webSearchFailed` / `webFetchFailed`：授权通过，但 DSH Web provider 请求失败。
+DSH 任务自己的联网开关仍独立，关闭外网不影响 AnythingLLM 资料库检索。搜索结果必须来自实际后端响应；错误响应不会被伪装成搜索结果。
