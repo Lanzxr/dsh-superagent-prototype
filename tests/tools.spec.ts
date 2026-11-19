@@ -17,6 +17,18 @@ const words = (count: number) => Array.from({ length: count }, () => 'word').joi
 const read = (resource: string, page: { offset?: number; limit?: number } = {}) =>
   h.runTool(h.runtime.masterId, 'orchestrator_read', { resource, ...page })
 
+it('keeps controlled web tools off the main Session and available to worker Sessions', async () => {
+  const mainTools = h.tools.get(h.runtime.masterId)!
+  expect(mainTools.has('orchestrator_web_search')).toBe(false)
+  expect(mainTools.has('orchestrator_web_fetch')).toBe(false)
+
+  const { ticket, sessionId } = await h.acceptedTicket(feishu('1', '@bot 查一下最新版本信息'))
+  expect(sessionId).toBe(`worker-${ticket.id}`)
+  const workerTools = h.tools.get(sessionId)!
+  expect(workerTools.has('orchestrator_web_search')).toBe(true)
+  expect(workerTools.has('orchestrator_web_fetch')).toBe(true)
+})
+
 it('reads the lists, a ticket, a decision, the settings, the prompts and the models as resources', async () => {
   const { ticket, trigger } = await h.acceptedTicket(feishu('1', '@bot 修一下回归'))
   await h.acceptedTicket(feishu('2', '@bot 再修一个'))
@@ -57,6 +69,55 @@ it('reads the lists, a ticket, a decision, the settings, the prompts and the mod
   expect(await read('prompts', { limit: 8000 })).toMatchObject({ items: expect.objectContaining({ length: 50 }), next_offset: 50 })
 })
 
+it('admits a human QQ message from Company Agent as a DSSuperAgent assessment candidate', async () => {
+  const trigger = companyAgentTrigger({
+    event_id: 'qq-human-event', source_type: 'qq.group', source_id: 'group-1', conversation_id: 'group-1',
+    actor_id: 'member-1', occurred_at: '2026-11-18T00:00:00.000Z', content: '帮我查一下 GitHub 热门项目',
+    attachments: [], capabilities: [], context: [],
+  })
+  expect(trigger.human).toBe(true)
+  expect(h.runtime.receive(trigger)).toBe('stored')
+  await h.runtime.idle()
+  expect(h.candidates()).toContain(trigger.id)
+})
+it('refuses direct routing for Company Agent events so structured intent cannot be bypassed', async () => {
+  expect(builtInParts()['runtime/admission'].text).toContain('Always assess these events with')
+  expect(builtInParts()['runtime/dispatch'].text).toContain('Company Agent candidates are an exception')
+  const trigger = companyAgentTrigger({
+    event_id: 'route-event', source_type: 'company-agent', source_id: 'group-1', conversation_id: 'group-1',
+    actor_id: 'member-1', occurred_at: '2026-11-18T00:00:00.000Z', content: '帮我查资料',
+    attachments: [], capabilities: [], context: [],
+  })
+  const settings = h.runtime.store.settings()
+  h.runtime.store.saveSettings({ ...settings, eval: { ...settings.eval, mode: 'auto' },
+    policy: { ...settings.policy, sources: { ...settings.policy.sources, 'company-agent': { bots: [{ id: 'member-1' }] } } } })
+  h.runtime.receive(trigger)
+  await h.runtime.idle()
+
+  await expect(h.runTool(h.runtime.masterId, 'orchestrator_route', {
+    decisions: [{ kind: 'ignore', trigger_id: trigger.id, reason: '无需处理' }],
+  })).resolves.toEqual({ results: [{ trigger_id: trigger.id, kind: 'ignore', refused:
+    'Company Agent events must use orchestrator_eval_decide with structured assistant intent' }] })
+  expect(h.runtime.store.decisions.byThread('company-agent:group-1')).toEqual([])
+
+  await h.runTool(h.runtime.masterId, 'orchestrator_eval', { trigger_id: trigger.id })
+  const currentSettings = h.runtime.store.settings()
+  const result = await h.runTool(h.runtime.masterId, 'orchestrator_eval_decide', {
+    trigger_id: trigger.id,
+    decision: 'ignore',
+    rule_assessments: currentSettings.policy.rules.filter(rule => rule.enabled)
+      .map(rule => ({ rule_id: rule.id, matched: false, reason: 'No project work is requested' })),
+    direction: { implementation_requested: false, target_basis: 'undetermined', requires_design_decision: false,
+      evidence: 'This is an information request, not a request to change the project' },
+    title: 'Answer information request', scope: 'Respond with useful information', reason: 'The request can be handled as an observation',
+    assistant_intent: { action: 'observe', rationale: 'No DSH execution is needed', completion_conditions: [], plan_steps: [],
+      publication: { recommendation: 'group_update', reason: 'The user asked a direct question' } },
+  })
+  expect(result).toMatchObject({ decision: 'ignore' })
+  expect(h.runtime.store.decisions.byThread('company-agent:group-1')[0]?.audit).toMatchObject({
+    assistant_intent: { action: 'observe', publication: { recommendation: 'group_update' } },
+  })
+})
 it('resolves the Company Agent knowledge grant internally and keeps it out of tool arguments', async () => {
   const grant = 'g'.repeat(43)
   const trigger = companyAgentTrigger({

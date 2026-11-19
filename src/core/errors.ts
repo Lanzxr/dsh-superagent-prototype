@@ -49,6 +49,7 @@ export const USER_ERRORS = {
   webSearchDisabled: ['refused', 'External web search is disabled by Company Agent control settings'],
   webSearchUnavailable: ['refused', 'The controlled web search gateway or DSH web provider is not configured or reachable'],
   webSearchFailed: ['refused', 'The controlled web search failed ({status})'],
+  webSearchCredentialMissing: ['refused', 'The configured web provider is missing its required credential'],
   webFetchFailed: ['refused', 'The controlled web page fetch failed ({status})'],
 } as const satisfies Record<string, readonly ['missing' | 'refused', string]>
 export type UserErrorCode = keyof typeof USER_ERRORS

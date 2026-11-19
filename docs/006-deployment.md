@@ -19,7 +19,7 @@ COMPANY_AGENT_WEB_GATE_URL=http://127.0.0.1:8767/internal/web/authorize
 COMPANY_AGENT_WEB_GATE_API_KEY=
 ```
 
-The Company Agent Web Gate must be running on the configured address. The main Session and Executor Session call the local `orchestrator_web_search` and `orchestrator_web_fetch` tools; each call asks the gate for permission before using DSH's official `ctx.web` provider. Direct DSH `tool-web` search/fetch is disabled in this bundle so the sessions cannot bypass the gate.
+The Company Agent Web Gate must be running on the configured address. The main Session and Executor Session call Company Agent's `/internal/web/search` for SearXNG-backed search and `/internal/web/authorize` before using DSH HTTP fetch. Direct DSH `tool-web` search/fetch is disabled in this bundle so sessions cannot bypass the gate.
 
 The control console's **DSSuperAgent 联网检索** switch is checked for every call. Turning it off returns a denial immediately; turning it on allows the next call without restarting DSSuperAgent. **DSH 任务联网** is a separate switch for newly created Company Agent DSH executions and does not change the DSSuperAgent gate.
 
