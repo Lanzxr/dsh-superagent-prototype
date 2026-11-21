@@ -605,7 +605,7 @@ There is no tool for dismissing an unavailable Decision, rerunning setup, refres
 
 Most built-in instructions live in `prompts/*.md`, with one sentence per line joined by `promptFile`. Source skills live in `skills/dsh-superagent-*/SKILL.md`. Tool descriptions and fixed notices such as restart recovery notes remain in code. Assessment instructions live only in `prompts/admission.md`.
 
-Also see `prompts/company-agent-orchestrator.md` for flexible Company Agent step-planning guidance (avoiding rigid file-type rules while carrying `knowledge_document_ids`/`attachment_ids` across multi-step deliverables, leveraging `available_capabilities.recent_workspace_files` within the 15-day retention window, and planning `mcp__*` tool calls against authorized `available_capabilities.mcp_servers`).
+Also see `prompts/company-agent-orchestrator.md` for flexible Company Agent step-planning guidance (avoiding rigid file-type rules while carrying `knowledge_document_ids`/`attachment_ids` across multi-step deliverables, leveraging `available_capabilities.recent_workspace_files` within the 15-day retention window, routing `available_capabilities.custom_tools` alongside `available_capabilities.mcp_servers`, and driving the L3 admin Tool Forge workflow via `forge_admin` MCP tools with human approval gates).
 
 `tests/model-surface.spec.ts` checks these surfaces for drift. [004 Prompts](004-prompts.md) explains the team's editable parts.
 

@@ -29,7 +29,7 @@ function webRuntime(context: Context): WebRuntime {
 }
 
 function gateEndpoint(route: 'authorize' | 'search' = 'authorize'): URL {
-  const endpoint = new URL(process.env.COMPANY_AGENT_WEB_GATE_URL ?? 'http://127.0.0.1:8767/internal/web/authorize')
+  const endpoint = new URL(process.env.COMPANY_AGENT_WEB_GATE_URL ?? 'http://127.0.0.1:28767/internal/web/authorize')
   if (route === 'search') endpoint.pathname = '/internal/web/search'
   if (!['http:', 'https:'].includes(endpoint.protocol) || endpoint.username || endpoint.password || endpoint.search || endpoint.hash) {
     throw new UserError('webSearchUnavailable')
