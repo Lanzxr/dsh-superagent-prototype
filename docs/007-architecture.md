@@ -334,6 +334,7 @@ Some generic modules still refer directly to GitHub or Feishu:
 | `src/app/retry-health.ts` | `RetryHealth`: which Sessions wait on a model budget retry, for the `models` health entry |
 | `src/app/role-models.ts` | Resolves the Eval and Executor models, and seeds a new Session with its role's model |
 | `src/app/assessment.ts` | The MasterAssessor, the assessment schema and the window `orchestrator_eval` answers |
+| `src/app/triage.ts` | Stateless semantic classification of un-mentioned group messages (`direct`, `ongoing_discussion`, `chatter`) via `ctx.llm` |
 | `src/app/execution-environment.ts` | The execution environment: its variables, a Ticket's values, the directory root and the lines of the prompt section, which `src/app/prompts.ts` fills into its template |
 | `src/app/source-context.ts` | `sourceContextOf`: each Source kind's `SourceContext` |
 | `src/app/links.ts` | `sourceLink`, the page of a Trigger's message, and `candidateCard` |
@@ -477,7 +478,7 @@ A generated column is computed from its row's JSON and is empty outside its set,
 | Schema | Current schema version |
 | Settings versions | `settings-revision`, `settings-version:<n>`, `settings-block-revision:<block>`; snapshots include origin, Policy version and affected Tickets |
 | Prompt versions | `prompt-revision`, `prompt-version:<n>` |
-| Main Session | `master-id` |
+| Main Session | `master-id`, `master-generation`, `master-turns` |
 | Session prompt history | `session-prompts:<session id>` |
 | Source state | Read positions such as `github-cursor:<number>`, PR CI fingerprints and seen Feishu-topic messages; keys begin with the kind or `thread-` plus a Thread key |
 | Display names | `source-labels:<source id>` |
@@ -603,6 +604,8 @@ Workers receive assignments and Inputs inline. The first message includes the ti
 There is no tool for dismissing an unavailable Decision, rerunning setup, refreshing Source display names, or sending an Executor-owned human follow-up to Eval. The last action is deliberately refused by `orchestrator_trigger_requeue`. Other panel actions have equivalent tools.
 
 Most built-in instructions live in `prompts/*.md`, with one sentence per line joined by `promptFile`. Source skills live in `skills/dsh-superagent-*/SKILL.md`. Tool descriptions and fixed notices such as restart recovery notes remain in code. Assessment instructions live only in `prompts/admission.md`.
+
+Also see `prompts/company-agent-orchestrator.md` for flexible Company Agent step-planning guidance (avoiding rigid file-type rules while carrying `knowledge_document_ids`/`attachment_ids` across multi-step deliverables, leveraging `available_capabilities.recent_workspace_files` within the 15-day retention window, and planning `mcp__*` tool calls against authorized `available_capabilities.mcp_servers`).
 
 `tests/model-surface.spec.ts` checks these surfaces for drift. [004 Prompts](004-prompts.md) explains the team's editable parts.
 

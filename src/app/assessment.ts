@@ -31,6 +31,14 @@ export const AssistantIntentSchema = z.object({
     knowledge_document_ids: z.array(z.string().trim().min(1).max(200)).max(20).optional(),
     attachment_ids: z.array(z.string().trim().min(1).max(200)).max(20).optional(),
   }).strict()).max(20),
+  silent_ack: z.boolean().optional(),
+  capability_gap: z.object({
+    topic: z.string().trim().min(1).max(200),
+    summary: z.string().trim().min(1).max(1000),
+    missing_capability: z.string().trim().min(1).max(300),
+    gap_kind: z.enum(['tool_script', 'python_package', 'knowledge_access', 'external_api', 'other']).optional(),
+    suggested_solution: z.string().trim().min(1).max(1000),
+  }).strict().optional(),
   publication: z.object({
     recommendation: z.enum(['suppress', 'private_nudge', 'group_update', 'urgent_escalation']),
     reason: z.string().trim().min(1).max(1000),

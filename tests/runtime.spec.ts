@@ -1798,3 +1798,98 @@ it('keeps the Policy the main Session judges by in its prompt, after admission a
   expect(policy()).toContain('No rule is enabled: a proactive candidate can only be ignored.')
   expect(policy()).toContain('The accept mode and the rules decide proactive candidates only')
 })
+
+it('handles POST company-agent/classify statelessly without waking the master Session', async () => {
+  ;(services.llm as Record<string, unknown>).prepareCall = vi.fn(async (config: { provider: string; model: string }) => ({
+    config,
+    stream: async function* () {
+      yield { type: 'text-delta', index: 0, text: '{"classification":"ongoing_discussion","reason":"humans discussing margin"}' }
+      yield { type: 'finish', reason: { kind: 'stop' } }
+    },
+  }))
+  await runtime.settings.save('eval', { ...runtime.store.settings().eval, model: { provider: 'zeno', model: 'ds-chat' } },
+    runtime.store.blockRevision('eval'), 'panel')
+  deliveries.mockClear()
+
+  let status = 0, text = ''
+  const req = {
+    method: 'POST',
+    url: '/orchestrator/api/company-agent/classify',
+    headers: { host: '127.0.0.1:3082', 'x-orchestrator-request': '1' },
+    async *[Symbol.asyncIterator]() {
+      yield Buffer.from(JSON.stringify({
+        source_type: 'qq.group',
+        conversation_id: 'grp-triage',
+        actor_id: 'u1',
+        content: '本月套餐利润率好像不对',
+        bot_aliases: ['憨憨'],
+        recent_messages: [{ role: 'user', actor: 'u0', text: '上个月数据出来了吗' }],
+      }))
+    },
+  }
+  await http(req, { writeHead: (code: number) => { status = code }, end: (data: string) => { text = data } })
+  expect(status).toBe(200)
+  expect(JSON.parse(text)).toEqual({
+    classification: 'ongoing_discussion',
+    reason: 'humans discussing margin',
+    model: 'zeno/ds-chat',
+  })
+  expect(deliveries).not.toHaveBeenCalled()
+})
+
+it('rotates the idle master Session after threshold turns and routes new candidates to the fresh session', async () => {
+  await runtime.stop()
+  rmSync(join(directory, 'orchestrator.sqlite'), { force: true })
+  const seed = new Store(join(directory, 'orchestrator.sqlite'))
+  seed.saveSettings(SettingsSchema.parse({
+    ...seed.settings(),
+    sources: { github: { enabled: true, config: { repository: 'acme/widgets', cli: AGENT() } }, feishu: { enabled: true, config: { cli: BOT() } } },
+  }))
+  seed.close()
+  const rotCtx = new Context()
+  for (const [name, service] of Object.entries(services)) rotCtx.reflect.provide(name, service)
+  const rotRuntime = new Runtime(rotCtx, testMachine({ stateDir: directory }), () => {}, { masterRotateTurns: 2 })
+  try {
+    await rotRuntime.ready
+    rotRuntime.sources.register(feishuKind)
+    rotRuntime.sources.register(githubKind)
+    rotRuntime.store.saveSettings({
+      ...rotRuntime.store.settings(),
+      policy: { ...rotRuntime.store.settings().policy, sources: { feishu: { allowed: [{ id: MEMBER, name: 'Alice' }], syncChat: CHAT }, github: { allowed: [{ id: 'alice' }] } } },
+      sources: { github: { enabled: true, config: { repository: 'acme/widgets', cli: AGENT() } }, feishu: { enabled: true, config: { cli: BOT(), chats: [{ chatId: CHAT, listen: 'all' }], directMessages: true } } },
+    })
+
+    const firstMaster = rotRuntime.masterId
+    const simulateTurn = () => {
+      const agent = agents.get(rotRuntime.masterId)!
+      agent.status = 'running'
+      rotCtx.emit('agent/status', { agent, status: 'running' } as never)
+      agent.status = 'idle'
+      rotCtx.emit('agent/status', { agent, status: 'idle' } as never)
+    }
+
+    simulateTurn()
+    await rotRuntime.idle()
+    expect(rotRuntime.masterId).toBe(firstMaster)
+    expect(rotRuntime.store.get(KV.runtime.masterTurns)).toBe(1)
+
+    simulateTurn()
+    await rotRuntime.idle()
+    const rotatedMaster = rotRuntime.masterId
+    expect(rotatedMaster).not.toBe(firstMaster)
+    expect(rotatedMaster).toMatch(/^orchestrator-/)
+    expect(rotRuntime.store.get(KV.runtime.masterId)).toBe(rotatedMaster)
+    expect(rotRuntime.store.get(KV.runtime.masterTurns)).toBe(0)
+    expect(rotRuntime.store.get(KV.sessions.prompts(firstMaster))).toBeUndefined()
+    expect(sections.has(rotatedMaster)).toBe(true)
+    expect(agents.has(rotatedMaster)).toBe(true)
+
+    const nextTrigger = feishu('77', '@bot 换新会话后查状态')
+    deliveries.mockClear()
+    await rotRuntime.receive(nextTrigger)
+    await rotRuntime.idle()
+    expect(deliveries.mock.calls.some(([call]) => call.sessionId === rotatedMaster)).toBe(true)
+  } finally {
+    await rotRuntime.stop()
+  }
+})

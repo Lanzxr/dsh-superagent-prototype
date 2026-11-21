@@ -301,6 +301,8 @@ const ROUTES: { [K in keyof Api]: Route<K> } = {
   'GET sources': { answer: sourceStatuses },
   'POST company-agent/events': { body: true, answer: ({ body }) => ({ status: 'stored', trigger_id: `company-agent:${body.event_id}`,
     thread: `company-agent:${body.conversation_id}` }) },
+  'POST company-agent/classify': { body: true, answer: ({ body }) => ({ classification: 'ongoing_discussion',
+    reason: `classified ${body.conversation_id}`, model: 'fake/model' }) },
   'GET settings': { answer: settingsView },
   'POST sources/:id/labels': { answer: () => {
     // Label refresh failures come from the bot CLI and are returned verbatim.

@@ -37,8 +37,8 @@ interface Skill { name: string; description: string; content: string }
  * Maximum combined character count of system prompt and tool definitions per role (~5% above baseline).
  * Lower this limit when shrinking model-facing text; raise it only intentionally and explain why in the commit message.
  */
-// The controlled search/fetch tools intentionally add model context; preserve headroom for their source-rich results contract.
-const BUDGET: Record<Role, number> = { orchestrator: 62_000, worker: 40_500 }
+// The controlled search/fetch tools and dual-mode AssistantIntent fields (silent_ack, capability_gap) add tool schema context; pure Company Agent mode omits GitHub/Feishu prompts so live prompt size is well below budget.
+const BUDGET: Record<Role, number> = { orchestrator: 63_000, worker: 40_500 }
 const PROMPTS = 'prompts/, skills/', TOOLS = 'src/app/tools/', SESSIONS = 'src/app/sessions.ts'
 const NOTICES = 'src/app/notices.ts', LINKS = 'src/app/links.ts', ASSESSMENT = 'src/app/assessment.ts'
 const EXECUTOR = 'src/executor/dsh.ts', ERRORS = 'src/core/errors.ts'

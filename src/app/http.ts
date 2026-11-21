@@ -28,6 +28,7 @@ import { sourcesStatus, type SetupState } from './views/sources.ts'
 import { decisionList, search, threadDetail, threadList } from './views/threads.ts'
 import { executorLoad, ticketDetail, ticketList } from './views/tickets.ts'
 import { CompanyAgentEventSchema, companyAgentTrigger } from '../sources/company-agent.ts'
+import { CompanyAgentClassifySchema, TriageError, type CompanyAgentClassifyResult } from './triage.ts'
 
 export interface HttpHost {
   readonly store: Store
@@ -50,6 +51,7 @@ export interface HttpHost {
   readonly feishuProblem?: SetupProblem | undefined
   configured(): boolean
   receive(trigger: Trigger): ReceiveResult
+  classifyCompanyAgent?(input: unknown, signal?: AbortSignal): Promise<CompanyAgentClassifyResult>
   links(): LinkTarget
   ticketEnvironment(ticket: Ticket): Variable[]
   checkSetup(): void
@@ -87,6 +89,7 @@ function failure(error: unknown): [number, Record<string, unknown>] {
   }
   if (error instanceof SetupError) return [400, { error: error.message, setup: error.problem }]
   if (error instanceof RouteError) return [error.status, { error: error.message }]
+  if (error instanceof TriageError) return [error.status, { error: error.message }]
   if (error instanceof UserError) return [error.missing ? 404 : 400, { error: error.message, code: error.code, values: error.values }]
   if (error instanceof SettingsConflict || error instanceof PromptConflict) return [409, { error: error.message }]
   return [500, { error: error instanceof Error ? error.message : String(error) }]
@@ -165,6 +168,11 @@ function routes(runtime: HttpHost): Routes {
       const event = CompanyAgentEventSchema.parse(await body(512 * 1024))
       const trigger = companyAgentTrigger(event)
       return { status: runtime.receive(trigger), trigger_id: trigger.id, thread: threadKey(trigger.threads[0]!) }
+    },
+    'POST company-agent/classify': async ({ body }) => {
+      const payload = CompanyAgentClassifySchema.parse(await body(256 * 1024))
+      if (!runtime.classifyCompanyAgent) throw new TriageError(503, 'Company Agent classifier is not configured')
+      return await runtime.classifyCompanyAgent(payload)
     },
     'GET settings': () => settingsView(store, runtime.sources, runtime.health, setupState(runtime), runtime.machine.stateDir),
     'POST sources/:id/labels': ({ params }) => runtime.settings.refreshLabels(params.id),
