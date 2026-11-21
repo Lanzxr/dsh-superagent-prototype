@@ -60,7 +60,8 @@ it('assembles every role from fixed sections around the team sections, whatever 
 it('requires current web requests from Company Agent to be handed to a web-enabled worker', () => {
   expect(mainAdmissionPolicy).toContain('current_event')
   expect(mainAdmissionPolicy).toContain('require `propose_work`')
-  expect(mainAdmissionPolicy).toContain('orchestrator_web_search')
+  expect(mainAdmissionPolicy).toContain('`web_search`/`web_fetch`')
+  expect(mainAdmissionPolicy).toContain('ONE `dsh.task` step')
   expect(mainAdmissionPolicy).toContain('QQ replies use `group_update`')
   expect(guides.dispatch).toContain('Company Agent current/web requests')
   expect(guides.dispatch).toContain('a `dsh.task` step')
@@ -251,6 +252,21 @@ describe('overrides of built-in parts', () => {
     withStore(store => {
       expect(promptsOf(store).compose(defaultPrompts(), 'worker')).toContain('an empty value means that part is not configured here). '
         + `The prepare command of a ticket directory reads the same variables:\n${ENVIRONMENT_LINE}`)
+    })
+  })
+  it('uses the dedicated Company Agent orchestrator prompt without GitHub/Feishu boilerplate when neither is configured', () => {
+    withStore(store => {
+      const prompts = new Prompts(store, () => 100000, () => undefined, () => false, () => false)
+      const composed = prompts.compose(defaultPrompts(), 'orchestrator')
+      expect(composed).toContain('Mode 1: Direct conversation')
+      expect(composed).toContain('Mode 2: Ambient group chat cooldown')
+      expect(composed).toContain('capability_gap')
+      expect(composed).not.toContain('Before and After visual evidence')
+      expect(composed).not.toContain('git filter-branch')
+      expect(composed).not.toContain('100 words is a hard ceiling')
+      expect(prompts.skills(defaultPrompts())).toEqual([])
+      const custom = prompts.compose({ ...defaultPrompts(), communication: '使用简洁中文。' }, 'orchestrator')
+      expect(custom).toContain('## Communication\n使用简洁中文。')
     })
   })
 })

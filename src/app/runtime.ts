@@ -23,6 +23,7 @@ import type { SetupProblem } from '../setup.ts'
 import { DshExecutor, sourceTrigger, triggerMessage, workerSessionId } from '../executor/dsh.ts'
 import { ticketCard } from './cards.ts'
 import { MasterAssessor } from './assessment.ts'
+import { CompanyAgentClassifier } from './triage.ts'
 import { KV } from '../kv.ts'
 import { Store } from './store.ts'
 import { evalsHealth } from './views/overview.ts'
@@ -52,6 +53,8 @@ import { executorTools, type ExecutorToolsHost } from './tools/executor.ts'
 declare module '@deepseek-ai/cordis' { interface Context { orchestrator: SourceHost } }
 const now = (): string => new Date().toISOString()
 
+export const DEFAULT_MASTER_ROTATE_TURNS = 12
+
 /**
  * Composition root of dsh-superagent that connects `Store`, `Setup`, `Engine`, `SourceRegistry`, `Effects`, `Outbox`, `Passes`, `Sessions`, `Settings`, `Prompts`, `DshExecutor`, and `MasterAssessor`.
  * Exposes the `SourceHost` service on the Cordis context for source plugins and coordinates startup, setup checks, HTTP route registration, and graceful shutdown.
@@ -74,7 +77,12 @@ export class Runtime extends Service implements SourceHost {
   readonly ready: Promise<void>
   private readonly board = new HealthBoard()
   private readonly runtimeHealth = this.board.claim('runtime', { state: 'starting', detail: '' })
-  readonly masterId: string
+  private _masterId: string
+  get masterId(): string { return this._masterId }
+  private masterRunningTurn = false
+  private masterCompacted = false
+  private rotating?: Promise<boolean>
+  private readonly classifier: CompanyAgentClassifier
   private readonly sourceLinks = new TextCache(200_000)
   private readonly stopped = new AbortController()
   private readonly disposers: (() => void)[] = []
@@ -85,7 +93,7 @@ export class Runtime extends Service implements SourceHost {
   private readonly toolHost: MainToolsHost & ExecutorToolsHost
   /** Non-zero while a main-Session tool is executing an Engine command, suppressing self-triggered domain event notices. */
   private quiet = 0
-  constructor(ctx: Context, readonly machine: Machine, restart: () => void) {
+  constructor(ctx: Context, readonly machine: Machine, restart: () => void, private readonly options: { masterRotateTurns?: number } = {}) {
     super(ctx, 'orchestrator')
     const runtime = this
     // Lock the state directory before opening the database so another process cannot migrate or write concurrently.
@@ -101,9 +109,11 @@ export class Runtime extends Service implements SourceHost {
       const deployed = () => setup.configured()
         ? environmentOf({ deployment: setup.deployment, sources: this.sources, settings: store.settings() }) : undefined
       const feishu = () => setup.configured() && !!setup.deployment.feishu
-      const prompts = this.prompts = new Prompts(store, () => machine.promptMaxChars.get(), deployed, feishu)
-      const masterId = this.masterId = store.get(KV.runtime.masterId) ?? `orchestrator-${key(machine.stateDir)}`
+      const github = () => setup.configured() && Boolean(setup.deployment.repository)
+      const prompts = this.prompts = new Prompts(store, () => machine.promptMaxChars.get(), deployed, feishu, github)
+      const masterId = this._masterId = store.get(KV.runtime.masterId) ?? `orchestrator-${key(machine.stateDir)}`
       store.set(KV.runtime.masterId, masterId)
+      this.classifier = new CompanyAgentClassifier({ ctx, settings: () => store.settings(), masterId: () => this._masterId })
       const commands = this.commands = new Commands(() => setup.deployment, setup.commandEnvironment, this.lifetime)
       const board = this.board
       const effects = this.effects = new Effects(store, board)
@@ -117,10 +127,10 @@ export class Runtime extends Service implements SourceHost {
       const links: LinkHost = { store, links: this.sourceLinks, commands, sources, lifetime: this.lifetime }
       const link = (trigger: Trigger, signal?: AbortSignal) => sourceLink(links, trigger, signal)
       const environment = (ticket: Ticket) => this.ticketEnvironment(ticket)
-      const resources: ResourceHost = { store, pages: new TextCache(4_000_000), prompts, commands, masterId, context: ctx,
+      const resources: ResourceHost = { store, pages: new TextCache(4_000_000), prompts, commands, get masterId() { return runtime._masterId }, context: ctx,
         promptVersion: id => this.sessions.promptVersion(id), mayRead: (id, revision) => this.sessions.mayRead(id, revision),
         feishuPageSize: () => feishuSettings(sources).readPageSize, sourceLink: link }
-      const sessions = this.sessions = new Sessions({ context: ctx, store, prompts, effects, health: board.claim('models'), masterId,
+      const sessions = this.sessions = new Sessions({ context: ctx, store, prompts, effects, health: board.claim('models'), get masterId() { return runtime._masterId },
         lifetime: this.lifetime,
         closing: () => this.closing(), environment,
         tools: (agent, ticket) => ticket ? executorTools(this.toolHost, ticket) : mainTools(this.toolHost, agent) })
@@ -132,7 +142,7 @@ export class Runtime extends Service implements SourceHost {
         repliedTo: trigger => repliedTo({ store, sources }, trigger) })
       this.assessor = new MasterAssessor({ get engine() { return runtime.engine }, commands, get deployment() { return setup.deployment }, effects,
         settings: () => store.settings(), paused: () => this.paused(), threadContext: trigger => sources.threadContext(trigger),
-        deliver: (id, text) => sessions.prompt(masterId, id, text, 'steer'), candidateCard: candidate => candidateCard(links, candidate) })
+        deliver: (id, text) => sessions.prompt(runtime._masterId, id, text, 'steer'), candidateCard: candidate => candidateCard(links, candidate) })
       const outbox = this.outbox = new Outbox({ store, effects, sources, commands, paused: () => this.paused() })
       const { assessor, executor } = this
       const policy = () => settingsPolicy(store.settings(), sources)
@@ -157,7 +167,8 @@ export class Runtime extends Service implements SourceHost {
       const evals = board.claim('evals', { state: 'ready', detail: 'No unavailable Eval in the last hour' })
       const evaluateDue = () => { engine.evaluateDue(); evals.set(evalsHealth(store)) }
       const passes = this.passes = new Passes({ engine: { receive: trigger => engine.receive(trigger), evaluateDue }, effects,
-        health: this.runtimeHealth, lifetime: this.lifetime, configured: () => setup.configured(), closing: () => this.closing() })
+        health: this.runtimeHealth, lifetime: this.lifetime, configured: () => setup.configured(), closing: () => this.closing(),
+        settle: () => this.rotating })
       this.sourceDeps = { store, engine, outbox, commands, sources, get ready() { return runtime.ready },
         get deployment() { return setup.deployment }, configured: () => setup.configured(),
         get setupProblem() { return setup.problem }, get feishuProblem() { return setup.feishuProblem }, receive: trigger => passes.receive(trigger) }
@@ -194,9 +205,64 @@ export class Runtime extends Service implements SourceHost {
   }
   checkSetup(): void { this.setup.check() }
   receive(trigger: Trigger): ReceiveResult { return this.passes.receive(trigger) }
-  idle(): Promise<void> { return this.passes.idle() }
+  idle(): Promise<void> {
+    return (async () => {
+      for (;;) {
+        await this.passes.idle()
+        if (!this.rotating) return
+        await this.rotating
+      }
+    })()
+  }
   pump(): Promise<void> { return this.passes.pump() }
   sendReplies(): Promise<void> { return this.outbox.sent() }
+  /** Forces or conditionally triggers master-session rotation when idle without active evaluations or pending notices. */
+  rotateMasterSession(force = false): Promise<boolean> {
+    if (this.rotating) return this.rotating
+    const run = this.performMasterRotation(force).finally(() => { if (this.rotating === run) this.rotating = undefined })
+    this.rotating = run
+    return run
+  }
+  private masterRotationLimit(): number { return this.options.masterRotateTurns ?? DEFAULT_MASTER_ROTATE_TURNS }
+  private scheduleMasterRotation(): void {
+    if (this.closing() || !this.setup.configured() || this.rotating) return
+    const turns = this.store.get(KV.runtime.masterTurns) ?? 0
+    if (!this.masterCompacted && turns < this.masterRotationLimit()) return
+    void this.rotateMasterSession(false).catch(error => {
+      this.ctx.logger.warn('dsh-superagent: master rotation deferred (%s)', String(error))
+    })
+  }
+  private async performMasterRotation(force: boolean): Promise<boolean> {
+    if (this.closing() || !this.setup.configured()) return false
+    const turns = this.store.get(KV.runtime.masterTurns) ?? 0
+    if (!force && !this.masterCompacted && turns < this.masterRotationLimit()) return false
+    if (this.store.threads.active().length > 0) return false
+    if (this.effects.pending('relay') || this.effects.pending('notice')) return false
+    const resolved = await this.ctx.sessionController.resolveAgent(this._masterId as SessionId).catch(() => undefined)
+    const agent = resolved && 'agent' in resolved ? resolved.agent : undefined
+    if (agent && (agent.status !== 'idle' || agent.inbox.nextTurn.length > 0 || agent.inbox.nextStep.length > 0)) return false
+
+    const prevId = this._masterId
+    const generation = (this.store.get(KV.runtime.masterGeneration) ?? 0) + 1
+    const nextId = `orchestrator-${key(this.machine.stateDir, String(generation))}`
+    this._masterId = nextId
+    try {
+      await this.sessions.ensure(nextId, this.machine.stateDir, 'dsh-superagent orchestrator', 'orchestrator')
+    } catch (error) {
+      this._masterId = prevId
+      throw error
+    }
+    this.store.atomic(() => {
+      this.store.set(KV.runtime.masterId, nextId)
+      this.store.set(KV.runtime.masterGeneration, generation)
+      this.store.set(KV.runtime.masterTurns, 0)
+      this.store.delete(KV.sessions.prompts(prevId))
+    })
+    this.masterCompacted = false
+    this.masterRunningTurn = false
+    this.ctx.logger.info('dsh-superagent: rotated master session %s -> %s (turns=%d)', prevId, nextId, turns)
+    return true
+  }
   private closing(): boolean { return this.closingFlag }
   /** Hold evaluation, dispatch, and outbound delivery while paused or awaiting setup; sources still record incoming triggers. */
   private paused(): boolean { return !this.setup.configured() || this.store.settings().paused }
@@ -209,6 +275,23 @@ export class Runtime extends Service implements SourceHost {
     }
     this.sessions.install()
     this.executor.install()
+    this.disposers.push(this.ctx.on('agent/status', ({ agent, status }) => {
+      if (agent.id !== this._masterId || this.closing()) return
+      if (status === 'running') { this.masterRunningTurn = true; return }
+      if (status === 'idle') {
+        if (this.masterRunningTurn) {
+          this.masterRunningTurn = false
+          const nextTurns = (this.store.get(KV.runtime.masterTurns) ?? 0) + 1
+          this.store.set(KV.runtime.masterTurns, nextTurns)
+        }
+        this.scheduleMasterRotation()
+      }
+    }))
+    this.disposers.push(this.ctx.on('session/event', (session, event) => {
+      if (session.id === this._masterId && typeof event.type === 'string' && event.type.startsWith('compaction/')) {
+        this.masterCompacted = true
+      }
+    }))
     await this.sessions.ensure(this.masterId, this.machine.stateDir, 'dsh-superagent orchestrator', 'orchestrator')
     for (const id of this.settings.syncable()) await this.settings.sync(id).catch(() => { /* sync() records its failure in health. */ })
     // If stop() was called while awaiting setup, session creation, or policy sync, do not start background loops.
@@ -220,12 +303,14 @@ export class Runtime extends Service implements SourceHost {
   }
   private httpHost(): HttpHost {
     const runtime = this
-    const { store, sources, prompts, sessions, settings, engine, executor, health, machine, masterId, ready, sourceLinks, setup, passes } = this
-    return { store, sources, prompts, sessions, settings, engine, executor, health, machine, masterId, ready, sourceLinks,
+    const { store, sources, prompts, sessions, settings, engine, executor, health, machine, ready, sourceLinks, setup, passes } = this
+    return { store, sources, prompts, sessions, settings, engine, executor, health, machine, get masterId() { return runtime._masterId },
+      ready, sourceLinks,
       get deployment() { return setup.deployment },
       get setupProblem() { return setup.problem }, get feishuProblem() { return setup.feishuProblem },
       configured: () => setup.configured(), links: () => runtime.links(), ticketEnvironment: ticket => runtime.ticketEnvironment(ticket),
       receive: trigger => runtime.receive(trigger),
+      classifyCompanyAgent: (input, signal) => runtime.classifier.classify(input, signal),
       checkSetup: () => { setup.check() }, requestPass: () => { passes.request() }, models: () => this.ctx.sessionController.modelCatalog() }
   }
   /** Idempotent stop; concurrent or repeated calls share the same shutdown promise. */
@@ -237,7 +322,7 @@ export class Runtime extends Service implements SourceHost {
       const ids = [this.masterId, ...this.store.tickets.list().map(ticket => workerSessionId(ticket.id))]
       const agents = ids.map(id => this.ctx.agents.get(id as SessionId)).filter((agent): agent is Agent => agent !== undefined)
       for (const agent of agents) agent.cancel({ kind: 'user' }, { keepInbox: true })
-      await Promise.allSettled([passes, this.effects.drain(), ...agents.map(agent => agent.whenIdle())])
+      await Promise.allSettled([passes, this.rotating, this.effects.drain(), ...agents.map(agent => agent.whenIdle())])
       // The workers' jobs and subagents stop too: their ends would start worker turns without the tool limits released below.
       await this.executor.shutdown()
       this.executor.dispose()

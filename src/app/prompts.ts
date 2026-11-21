@@ -2,7 +2,7 @@
 import { z } from 'zod'
 import { UserError, key } from '../core/index.ts'
 import { policyVersion, type Settings, type SettingsOrigin } from '../policy.ts'
-import { masterPrompt, workerPrompt, sharedPrompt, guides, mainAdmissionPolicy, handoffPolicy, teamDefaults, sourceSkills, cliNotes } from './context.ts'
+import { masterPrompt, workerPrompt, sharedPrompt, companyAgentOrchestratorPrompt, guides, mainAdmissionPolicy, handoffPolicy, teamDefaults, sourceSkills, cliNotes } from './context.ts'
 import { environmentLines, type Variable } from './execution-environment.ts'
 import { promptsNotice } from './notices.ts'
 import type { Sessions } from './sessions.ts'
@@ -135,16 +135,32 @@ export class PromptConflict extends Error {}
 export class Prompts {
   private readonly versions: Versions<PromptVersion>
   constructor(private readonly store: Store, private readonly maxChars: () => number, private readonly environment: () => Variable[] | undefined,
-    private readonly feishu: () => boolean) {
+    private readonly feishu: () => boolean, private readonly github: () => boolean = () => true) {
     this.versions = new Versions(store, KV.prompts.revision, KV.prompts.version)
+  }
+  private companyAgentMode(config: PromptConfig): boolean {
+    return !this.github() && !this.feishu()
+      && !(config.overrides && (Object.hasOwn(config.overrides, 'runtime/orchestrator') || Object.hasOwn(config.overrides, 'runtime/admission')))
   }
   /** A role's prompt; the main Session's Policy section follows the settings as they are now, at each model request. */
   compose(config: PromptConfig, role: Role, variables = this.environment()): string {
-    return composePrompt(config, role, environmentSection(config, variables), role === 'orchestrator' ? policySection(this.store.settings(), config) : undefined)
+    const policy = role === 'orchestrator' ? policySection(this.store.settings(), config) : undefined
+    if (role === 'orchestrator' && this.companyAgentMode(config)) {
+      const customTeam = TEAM_SECTIONS.map(name => (
+        config[name] && config[name] !== teamDefaults[name] ? `## ${TEAM_HEADINGS[name]}\n${config[name]}` : ''
+      ))
+      return [
+        builtIn(config, 'runtime/shared'),
+        companyAgentOrchestratorPrompt,
+        ...customTeam,
+        policy?.text ?? '',
+      ].filter(Boolean).join('\n\n')
+    }
+    return composePrompt(config, role, environmentSection(config, variables), policy)
   }
-  /** Returns skills to register in every Session: built-in Source skills (`feishu` only when a Feishu bot is configured) followed by team skills. */
+  /** Returns skills to register in every Session: built-in Source skills (`feishu`/`github` only when configured) followed by team skills. */
   skills(config: PromptConfig): [string, string][] {
-    return [...this.feishu() ? ['feishu'] : [], 'github', ...Object.keys(config.skills)].map(name => [name, composeSkill(config, name)])
+    return [...this.feishu() ? ['feishu'] : [], ...this.github() ? ['github'] : [], ...Object.keys(config.skills)].map(name => [name, composeSkill(config, name)])
   }
   current(): PromptVersion {
     const revision = this.versions.revision()

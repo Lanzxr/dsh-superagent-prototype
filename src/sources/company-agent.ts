@@ -9,6 +9,7 @@ const HUMAN_QQ_SOURCE_TYPES = new Set(['qq.group', 'qq.guild', 'qq.direct', 'qq.
 
 const ContextEventSchema = z.object({
   event_id: z.string().trim().min(1).max(200).optional(),
+  role: z.enum(['user', 'assistant']).optional(),
   actor_id: z.string().trim().max(200),
   occurred_at: z.string().trim().max(80).optional(),
   content: z.string().max(12000),
@@ -25,6 +26,8 @@ export const CompanyAgentEventSchema = z.object({
   attachments: z.array(z.record(z.string(), z.unknown())).max(20).default([]),
   capabilities: z.array(z.string().trim().min(1).max(100)).max(40).default([]),
   knowledge_grant: z.string().trim().min(32).max(256).optional(),
+  interaction_mode: z.enum(['direct', 'ambient_cooldown']).optional(),
+  available_capabilities: z.record(z.string(), z.unknown()).optional(),
   context: z.array(ContextEventSchema).max(10).default([]),
 }).strict()
 
@@ -50,6 +53,8 @@ export function companyAgentTrigger(input: CompanyAgentEvent): Trigger {
     actor_id: event.actor_id,
     occurred_at: event.occurred_at,
     capabilities: event.capabilities,
+    ...(event.interaction_mode ? { interaction_mode: event.interaction_mode } : {}),
+    ...(event.available_capabilities ? { available_capabilities: event.available_capabilities } : {}),
     attachments: event.attachments,
     context: event.context,
     current_event: { event_id: event.event_id, content: event.content },
