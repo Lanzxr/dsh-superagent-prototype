@@ -183,7 +183,7 @@ export function mainTools(host: MainToolsHost, agent: Agent): Tool[] {
       }).strict(),
       execute: async (args, signal) => {
         const grant = knowledgeGrant(host, args.trigger_id)
-        const endpoint = new URL(process.env.COMPANY_AGENT_KNOWLEDGE_API_URL ?? 'http://127.0.0.1:8766/internal/knowledge/search')
+        const endpoint = new URL(process.env.COMPANY_AGENT_KNOWLEDGE_API_URL ?? 'http://127.0.0.1:28766/internal/knowledge/search')
         if (!['http:', 'https:'].includes(endpoint.protocol) || endpoint.username || endpoint.password || endpoint.search || endpoint.hash) {
           throw new UserError('knowledgeSearchUnavailable')
         }
@@ -207,7 +207,7 @@ export function mainTools(host: MainToolsHost, agent: Agent): Tool[] {
       }).strict(),
       execute: async (args, signal) => {
         const grant = knowledgeGrant(host, args.trigger_id)
-        const endpoint = new URL(process.env.COMPANY_AGENT_KNOWLEDGE_API_URL ?? 'http://127.0.0.1:8766/internal/knowledge/search')
+        const endpoint = new URL(process.env.COMPANY_AGENT_KNOWLEDGE_API_URL ?? 'http://127.0.0.1:28766/internal/knowledge/search')
         const routes = { list_attachments: '/internal/attachments/list', read_attachment: '/internal/attachments/read',
           read_document: '/internal/knowledge/read', history: '/internal/conversation/history' } as const
         endpoint.pathname = routes[args.action]

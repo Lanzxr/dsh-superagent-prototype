@@ -3,6 +3,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { AssistantIntentSchema } from '../src/app/assessment.ts'
 import { CompanyAgentClassifier, parseTriageResponse, TriageError } from '../src/app/triage.ts'
 import { SettingsSchema } from '../src/policy.ts'
+import { companyAgentOrchestratorPrompt } from '../src/app/context.ts'
 import { CompanyAgentEventSchema, companyAgentKind, companyAgentTrigger } from '../src/sources/company-agent.ts'
 
 describe('Company Agent Source', () => {
@@ -165,5 +166,37 @@ describe('Company Agent Source', () => {
     expect(callArg.system).toContain('triage classifier')
     expect(callArg.messages[0]!.content[0]!.text).toContain('<untrusted_group_messages>')
     expect(callArg.messages[0]!.content[0]!.text).toContain('"role":"assistant"')
+  })
+
+  it('forwards Tool Forge capabilities and teaches admin forge + custom_tools routing in orchestrator prompt', () => {
+    const adminEvent = CompanyAgentEventSchema.parse({
+      event_id: 'event-admin-forge',
+      source_type: 'qq.c2c',
+      source_id: 'admin-dm',
+      conversation_id: 'admin-dm',
+      actor_id: 'admin-1',
+      occurred_at: '2026-11-21T10:00:00Z',
+      content: '帮我接入模型聚合用量统计工具，并让员工群也能查',
+      available_capabilities: {
+        tier: 'admin',
+        tool_forge_enabled: true,
+        custom_tools: [
+          {
+            tool_id: 'usage_by_model',
+            mcp_server: 'forge_admin',
+            mcp_tool: 'mcp__forge_admin__usage_by_model',
+          },
+        ],
+      },
+      capabilities: ['dsh.task'],
+      attachments: [],
+      context: [],
+    })
+    const trigger = companyAgentTrigger(adminEvent)
+    expect(trigger.text).toContain('"tool_forge_enabled": true')
+    expect(trigger.text).toContain('mcp__forge_admin__usage_by_model')
+    expect(companyAgentOrchestratorPrompt).toContain('available_capabilities.custom_tools')
+    expect(companyAgentOrchestratorPrompt).toContain('forge_submit_release')
+    expect(companyAgentOrchestratorPrompt).toContain('/forge-approve')
   })
 })
