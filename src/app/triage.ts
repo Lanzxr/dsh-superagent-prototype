@@ -23,7 +23,7 @@ export const CompanyAgentClassifyContextItemSchema = z.object({
 }).strict()
 
 export const CompanyAgentClassifySchema = z.object({
-  source_type: z.enum(['qq.group', 'qq.guild']),
+  source_type: z.enum(['qq.group', 'qq.guild', 'wecom.group']),
   conversation_id: z.string().trim().min(1).max(200),
   actor_id: z.string().trim().min(1).max(200),
   actor_label: z.string().trim().max(120).optional(),

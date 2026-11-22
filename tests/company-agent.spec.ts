@@ -41,14 +41,17 @@ describe('Company Agent Source', () => {
 
     expect(result.success).toBe(false)
   })
-  it('marks only recognized QQ user events as human messages', () => {
+  it('marks only recognized QQ and WeCom user events as human messages', () => {
     const make = (source_type: string) => companyAgentTrigger({
       event_id: `event-${source_type}`, source_type, source_id: 'room-1', conversation_id: 'conversation-1',
       actor_id: 'user-1', occurred_at: '2026-11-18T00:00:00.000Z', content: 'hello',
       attachments: [], capabilities: [], context: [],
     })
 
-    for (const source of ['qq.group', 'qq.guild', 'qq.direct', 'qq.private', 'qq.c2c']) {
+    for (const source of [
+      'qq.group', 'qq.guild', 'qq.direct', 'qq.private', 'qq.c2c',
+      'wecom.group', 'wecom.dm', 'wecom.single',
+    ]) {
       expect(make(source).human, source).toBe(true)
     }
     expect(make('company-agent.execution-result').human).toBe(false)
@@ -148,8 +151,8 @@ describe('Company Agent Source', () => {
       masterId: () => 'orchestrator-test',
     })
     const result = await classifier.classify({
-      source_type: 'qq.group',
-      conversation_id: 'grp-1',
+      source_type: 'wecom.group',
+      conversation_id: 'wecom-grp-1',
       actor_id: 'u1',
       actor_label: 'Alice',
       content: '帮我查11月的',
