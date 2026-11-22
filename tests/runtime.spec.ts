@@ -1807,7 +1807,7 @@ it('handles POST company-agent/classify statelessly without waking the master Se
       yield { type: 'finish', reason: { kind: 'stop' } }
     },
   }))
-  await runtime.settings.save('eval', { ...runtime.store.settings().eval, model: { provider: 'zeno', model: 'ds-chat' } },
+  await runtime.settings.save('eval', { ...runtime.store.settings().eval, model: { provider: 'custom', model: 'ds-chat' } },
     runtime.store.blockRevision('eval'), 'panel')
   deliveries.mockClear()
 
@@ -1832,7 +1832,7 @@ it('handles POST company-agent/classify statelessly without waking the master Se
   expect(JSON.parse(text)).toEqual({
     classification: 'ongoing_discussion',
     reason: 'humans discussing margin',
-    model: 'zeno/ds-chat',
+    model: 'custom/ds-chat',
   })
   expect(deliveries).not.toHaveBeenCalled()
 })
