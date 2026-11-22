@@ -142,7 +142,7 @@ describe('Company Agent Source', () => {
     ctx.reflect.provide('llm', { resolveCallConfig: async (c: unknown) => c, prepareCall })
     ctx.reflect.provide('sessionController', {
       resolveAgent: async () => ({ error: { code: 'not-found' } }),
-      modelCatalog: async () => ({ default: { provider: 'zeno', model: 'deepseek-chat' }, groups: [], failures: [] }),
+      modelCatalog: async () => ({ default: { provider: 'custom', model: 'deepseek-chat' }, groups: [], failures: [] }),
     })
 
     const classifier = new CompanyAgentClassifier({
@@ -160,7 +160,7 @@ describe('Company Agent Source', () => {
       recent_messages: [{ role: 'assistant', actor: 'company-agent', text: '请问查哪个月的报销单？' }],
     })
 
-    expect(result).toEqual({ classification: 'direct', reason: 'Continues bot turn', model: 'zeno/deepseek-chat' })
+    expect(result).toEqual({ classification: 'direct', reason: 'Continues bot turn', model: 'custom/deepseek-chat' })
     expect(prepareCall).toHaveBeenCalledTimes(1)
     const prepCfg = preparedConfigs[0] as { temperature?: number; maxTokens?: number }
     const callArg = capturedRequests[0]!

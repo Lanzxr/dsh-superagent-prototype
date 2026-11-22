@@ -1,6 +1,6 @@
 # 受控联网检索
 
-DSSuperAgent 主会话不注册联网工具；需要实时或外部信息时，应创建/续接 worker 任务，由 worker 使用 `orchestrator_web_search` 和 `orchestrator_web_fetch`。Company Agent 每次搜索或读取网页前检查控制台开关；搜索请求由自托管 SearXNG 执行，网页读取由 DSH fetch 执行。结果包含来源网址、标题、摘要和检索时间，worker 应引用来源。API-ZENO 继续负责模型，不提供或替代搜索后端。
+DSSuperAgent 主会话不注册联网工具；需要实时或外部信息时，应创建/续接 worker 任务，由 worker 使用 `orchestrator_web_search` 和 `orchestrator_web_fetch`。Company Agent 每次搜索或读取网页前检查控制台开关；搜索请求由自托管 SearXNG 执行，网页读取由 DSH fetch 执行。结果包含来源网址、标题、摘要和检索时间，worker 应引用来源。上游大模型网关继续负责模型推理，不提供或替代搜索后端。
 
 Company Agent 事件以当前消息判断联网需求；历史上下文中的“不能联网”不能覆盖新的实时请求。需要联网时必须形成 `propose_work` 并交给带 `dsh.task` 的 worker，QQ 回复使用 `group_update`。
 
