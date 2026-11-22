@@ -9,7 +9,7 @@ Company Agent 事件以当前消息判断联网需求；历史上下文中的“
 DSSuperAgent 进程需要设置：
 
 ```text
-COMPANY_AGENT_WEB_GATE_URL=http://127.0.0.1:8767/internal/web/authorize
+COMPANY_AGENT_WEB_GATE_URL=http://127.0.0.1:28767/internal/web/authorize
 COMPANY_AGENT_WEB_GATE_API_KEY=<与 Company Agent 相同的桥接密钥；双方均使用 loopback 时可以留空>
 ```
 
