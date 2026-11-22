@@ -149,6 +149,11 @@ export class Runtime extends Service implements SourceHost {
       const engine = this.engine = new Engine({ repo: store, scope: sources, policy, assessor, executor,
         outbox, prepareTicket: (ticket, outcome) => executor.prepare(ticket, outcome), emit: event => {
           // Notify the main Session only about domain events it did not initiate itself.
+          if (event.type === 'decision.recorded' && event.data.kind === 'unavailable') {
+            const decision = store.decisions.get(event.data.decisionId)
+            ctx.logger.warn('dsh-superagent recorded unavailable decision %s on %s: %s',
+              event.data.decisionId, event.data.threadKey, decision ? reasonText(decision.reason) : 'unavailable')
+          }
           const notice = this.quiet ? undefined : eventNotice(event, id => store.tickets.get(id))
           if (notice) sessions.notify(...notice)
           // A person's message that reached an open ticket is the ticket's; the main Session hears of it in the same transaction,
